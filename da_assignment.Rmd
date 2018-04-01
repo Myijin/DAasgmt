@@ -9,7 +9,7 @@ output: pdf_document
 
 As the output below shows, the copackager table has 1200 observations and 10 columns, which means 1200 packaging jobs. Among them, 600 jobs' customer are Procter & Gamble and 600 jobs' customer are Unilever. 866 jobs are On-Time In-Full (OTIF) while 334 jobs are not OTIF.
 
-Dimentions of data and descriptions of columns:
+Dimensions of data and descriptions of columns:
 ```{r, echo=FALSE}
 copackager <- read.csv("copackager_table.csv")
 str(copackager,width=86,strict.width="cut")
@@ -25,11 +25,11 @@ summary(copackager[,c(11,10)])
 
 1) I checked for missing value and there is none.
 
-2) The values in columns which have dates and times are converted to date/time objects for calculation purpose.
+2) The values in columns where dates and times are stored are converted to date/time objects for calculation purpose.
 
-2) Erroneous values were corrected by removing all the observations with purchase order received date later than materials availablity date, or materials availablity date later than production started date, or production started date later or equal to production completed date, or production completed date later or equal to shipment shipped date.  After cleaning, there are 1101 observations left.
+2) Erroneous values were corrected by removing all the observations with purchase order received date later than materials availability date, or materials availability date later than production started date, or production started date later or equal to production completed date, or production completed date later or equal to shipment shipped date.  After cleaning, there are 1101 observations left.
 
-Dimentions of cleaned data:
+Dimensions of cleaned data:
 ```{r, message=FALSE, echo=FALSE, results="hide"}
 sapply(copackager, function(x) sum(is.na(x)))
 cleanCopackager <- copackager[
@@ -46,34 +46,59 @@ Counts by OTIF or job customer for cleaned data:
 summary(cleanCopackager[,c(11,10)])
 ```
 
+\newpage
+
 ### Q1: What is the average shift length? 
 \vspace*{-0.12in}
 
-```{r, echo=FALSE}
+Histogram for Shift Time:
+```{r, echo=FALSE, fig.align='center', fig.width=4.6, fig.height=3.5}
+library(ggplot2)
 cleanCopackager$shift.time <- as.numeric(
   cleanCopackager$production.completed.date - cleanCopackager$production.started.date, 
   units="hours")
+qplot(cleanCopackager$shift.time,
+      geom="histogram",
+      xlab = "shift time",
+      binwidth=1,
+      fill=I("grey"), 
+      col=I("black"))
+```
+Code output for mean shift time:
+```{r, echo=FALSE}
 print(mean(cleanCopackager$shift.time))
 ```
 Answer: 9.866409 $\approx$ 10hrs
 
+\newpage
+
 ### Q2.1: What is the change in probability of OTIF 3 days after receiving the PO vs 4 days?
 
 \vspace*{-0.12in}
-**Assumption**: 1) Based on description file, we can assume that the job is always completed in full (the packaged quantity is equal to that outlined in the PO). 2) assuming "3 days after" means more than 48 hrs but no more than 72 hrs after, "4 days after" means more than 72 hrs but no more than 96 hrs after.
+**Assumption**: Based on description file, we can assume that the job is always completed in full (the packaged quantity is equal to that outlined in the PO).
 
+Model for predicting OTIF based on the time from receiving the PO to shipment shipped:
 ```{r, echo=FALSE}
 cleanCopackager$cycle.time <- as.numeric(
   cleanCopackager$shipment.shipped.date-cleanCopackager$purchase.order.received.date, 
   units="days")
-prob_3 = mean(subset(cleanCopackager, cleanCopackager$cycle.time <=3 
-                     & cleanCopackager$cycle.time > 2)$OTIF, na.rm = TRUE)
-prob_4 = mean(subset(cleanCopackager, cleanCopackager$cycle.time <=4 
-                     & cleanCopackager$cycle.time > 3)$OTIF, na.rm = TRUE)
-print(sprintf('%.1f%%', (prob_3-prob_4)*100))
+# prob_3 = mean(subset(cleanCopackager, cleanCopackager$cycle.time <=3 
+#                      & cleanCopackager$cycle.time > 2)$OTIF, na.rm = TRUE)
+# prob_4 = mean(subset(cleanCopackager, cleanCopackager$cycle.time <=4 
+#                      & cleanCopackager$cycle.time > 3)$OTIF, na.rm = TRUE)
+# print(sprintf('%.1f%%', (prob_3-prob_4)*100))
+model <- glm(OTIF.factor~ cycle.time, data=cleanCopackager, family=binomial(logit))  
+print(summary(model))
+```
+Code output for probability of OTIF 3 days after minus probability of 4 days after:
+```{r, echo=FALSE}
+print(predict.glm(model, newdata=data.frame(cycle.time=3), type="response")-
+        predict.glm(model, newdata=data.frame(cycle.time=4), type="response"))
 ```
 
-Answer: 15%
+Answer: 2%
+
+\newpage
 
 ### Q2.2: How many days can the supplier afford to wait after receiving the PO to start production if they hope to be OTIF?
 \vspace*{-0.12in}
@@ -96,6 +121,8 @@ print(predict.glm(model, newdata=data.frame(wait.toproduct=7), type="response")>
 ```
 
 Answer: 6 days or less
+
+\newpage
 
 ###Q3: Is the difference in quantity produced between P&G and Unilever statistically significant?
 \vspace*{-0.12in}
@@ -125,7 +152,6 @@ print(t.test(q.pg, q.unilever))
 ```
 Boxplot for quantities produced by P&G and Unilever:
 ```{r, fig.align='center', fig.width=4.1, fig.height=3.7, echo=FALSE, message=FALSE, warning=FALSE}
-library(ggplot2)
 plot.data <- data.frame(pg=append(q.pg, rep(NA, 7)), Unilever=q.unilever)
 ggplot(stack(plot.data), aes(x = ind, y = values, fill=ind)) + 
   theme(legend.position="none") + xlab("customer") + ylab("quantity") +
@@ -135,12 +161,22 @@ ggplot(stack(plot.data), aes(x = ind, y = values, fill=ind)) +
 
 Answer: Yes
 
+\newpage
+
 ### Q4: Assuming everything else is constant, what is the probability of hitting OTIF if the customer was P&G?
 \vspace*{-0.12in}
-
+Code output for probability of hitting OTIF if the customer was P&G:
 ```{r, echo=FALSE}
 print(sprintf('%.1f%%', mean(subset(
   cleanCopackager, cleanCopackager$customer=="Procter & Gamble")$OTIF)*100))
+```
+Pie chart for Procter & Gamble:
+```{r, fig.align='center', echo=FALSE}
+df <- as.data.frame(table(subset(cleanCopackager, cleanCopackager$customer=="Procter & Gamble")$OTIF))
+pct <- round(df$Freq/sum(df$Freq)*100)
+lbls <- paste(c("Not OTIF", "OTIF"), pct) # add percents to labels 
+lbls <- paste(lbls,"%",sep="") # ad % to labels 
+pie(df$Freq, labels = lbls, cex=0.75)
 ```
 
 Answer: 69%
