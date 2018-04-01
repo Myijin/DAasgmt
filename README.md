@@ -1,4 +1,4 @@
-## DA Take-Home Assignment for Nulogy <br />
+## DA Take-Home Assignment <br />
 **Tools:** R/R markdown 
 
 This repository includes: <br />
