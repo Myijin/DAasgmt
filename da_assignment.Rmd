@@ -1,0 +1,146 @@
+---
+title: "Data Analyst Take-Home Assignment"
+author: "Yijing Cai"
+output: pdf_document
+---
+**Libraries or packages used**: ggplot2 for plot
+
+**Data Description:**
+
+As the output below shows, the copackager table has 1200 observations and 10 columns, which means 1200 packaging jobs. Among them, 600 jobs' customer are Procter & Gamble and 600 jobs' customer are Unilever. 866 jobs are On-Time In-Full (OTIF) while 334 jobs are not OTIF.
+
+Dimentions of data and descriptions of columns:
+```{r, echo=FALSE}
+copackager <- read.csv("copackager_table.csv")
+str(copackager,width=86,strict.width="cut")
+```
+Counts by OTIF or job customer:
+```{r, echo=FALSE}
+copackager[,c(2,3,4,5,8)] <- sapply(copackager[,c(2,3,4,5,8)], 
+                                    function(x) strptime(x, "%y-%m-%d %H:%M"))
+copackager$OTIF.factor <- factor(copackager$OTIF)
+summary(copackager[,c(11,10)])
+```
+**Cleaning data**:
+
+1) I checked for missing value and there is none.
+
+2) The values in columns which have dates and times are converted to date/time objects for calculation purpose.
+
+2) Erroneous values were corrected by removing all the observations with purchase order received date later than materials availablity date, or materials availablity date later than production started date, or production started date later or equal to production completed date, or production completed date later or equal to shipment shipped date.  After cleaning, there are 1101 observations left.
+
+Dimentions of cleaned data:
+```{r, message=FALSE, echo=FALSE, results="hide"}
+sapply(copackager, function(x) sum(is.na(x)))
+cleanCopackager <- copackager[
+  which(copackager$purchase.order.received.date<=copackager$materials.availablity.date 
+        & copackager$materials.availablity.date<=copackager$production.started.date
+        & copackager$production.completed.date>copackager$production.started.date
+        & copackager$shipment.shipped.date>copackager$production.completed.date) , ]
+```
+```{r, echo=FALSE}
+dim(cleanCopackager)
+```
+Counts by OTIF or job customer for cleaned data:
+```{r, echo=FALSE}
+summary(cleanCopackager[,c(11,10)])
+```
+
+### Q1: What is the average shift length? 
+\vspace*{-0.12in}
+
+```{r, echo=FALSE}
+cleanCopackager$shift.time <- as.numeric(
+  cleanCopackager$production.completed.date - cleanCopackager$production.started.date, 
+  units="hours")
+print(mean(cleanCopackager$shift.time))
+```
+Answer: 9.866409 $\approx$ 10hrs
+
+### Q2.1: What is the change in probability of OTIF 3 days after receiving the PO vs 4 days?
+
+\vspace*{-0.12in}
+**Assumption**: 1) Based on description file, we can assume that the job is always completed in full (the packaged quantity is equal to that outlined in the PO). 2) assuming "3 days after" means more than 48 hrs but no more than 72 hrs after, "4 days after" means more than 72 hrs but no more than 96 hrs after.
+
+```{r, echo=FALSE}
+cleanCopackager$cycle.time <- as.numeric(
+  cleanCopackager$shipment.shipped.date-cleanCopackager$purchase.order.received.date, 
+  units="days")
+prob_3 = mean(subset(cleanCopackager, cleanCopackager$cycle.time <=3 
+                     & cleanCopackager$cycle.time > 2)$OTIF, na.rm = TRUE)
+prob_4 = mean(subset(cleanCopackager, cleanCopackager$cycle.time <=4 
+                     & cleanCopackager$cycle.time > 3)$OTIF, na.rm = TRUE)
+print(sprintf('%.1f%%', (prob_3-prob_4)*100))
+```
+
+Answer: 15%
+
+### Q2.2: How many days can the supplier afford to wait after receiving the PO to start production if they hope to be OTIF?
+\vspace*{-0.12in}
+**Assumption**: The effects of other factors like the time from starting production to shipment shipped, or how long is the time from receiving PO to due date, are not considered.
+
+```{r, echo=FALSE}
+cleanCopackager$wait.toproduct <- as.numeric(
+  cleanCopackager$production.started.date-cleanCopackager$purchase.order.received.date, 
+  units="days")
+model <- glm(OTIF.factor~ wait.toproduct, data=cleanCopackager, family=binomial(logit))  
+summary(model)
+```
+I built the above model to predict OTIF based on the time packagers wait after receiving the PO to start production. When the input is 6 days, the model predicts true, which means jobs are more likely to be OTIF.
+```{r, echo=FALSE}
+print(predict.glm(model, newdata=data.frame(wait.toproduct=6), type="response")>0.5)
+```
+When the input is 7 days, the model predicts false, which means jobs are more likely to be not on time.
+```{r, echo=FALSE}
+print(predict.glm(model, newdata=data.frame(wait.toproduct=7), type="response")>0.5)
+```
+
+Answer: 6 days or less
+
+###Q3: Is the difference in quantity produced between P&G and Unilever statistically significant?
+\vspace*{-0.12in}
+
+**Assumption**: Samples come from a distribution that's close to normal.
+
+I have converted the quantity based on customer_unit_of_measure_conversions.csv. Two sample t test is conducted and it shows that the difference is statistically significant since p-value is very small.
+
+T-Test results:
+```{r, message=FALSE, echo=FALSE}
+cleanCopackager$converse.rate <- 
+  ifelse(cleanCopackager$unit.of.measure == "cases" 
+         & cleanCopackager$customer == "Procter & Gamble", 2,
+         ifelse(cleanCopackager$unit.of.measure == "cases" 
+                & cleanCopackager$customer == "Unilever", 3,
+                ifelse(cleanCopackager$unit.of.measure == "pallets" 
+                       & cleanCopackager$customer == "Procter & Gamble", 12,
+                       ifelse(cleanCopackager$unit.of.measure == "pallets" 
+                              & cleanCopackager$customer == "Unilever", 15,1
+                              ))))
+cleanCopackager$converse.quantity <- cleanCopackager$converse.rate*cleanCopackager$quantity.produced
+```
+```{r, echo=FALSE}
+q.pg <- subset(cleanCopackager, cleanCopackager$customer=="Procter & Gamble")$converse.quantity
+q.unilever <- subset(cleanCopackager, cleanCopackager$customer=="Unilever")$converse.quantity
+print(t.test(q.pg, q.unilever))
+```
+Boxplot for quantities produced by P&G and Unilever:
+```{r, fig.align='center', fig.width=4.1, fig.height=3.7, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+plot.data <- data.frame(pg=append(q.pg, rep(NA, 7)), Unilever=q.unilever)
+ggplot(stack(plot.data), aes(x = ind, y = values, fill=ind)) + 
+  theme(legend.position="none") + xlab("customer") + ylab("quantity") +
+  scale_x_discrete(labels=c("pg" = "P&G", "Unilever" = "Unilever")) +
+  geom_boxplot()
+```
+
+Answer: Yes
+
+### Q4: Assuming everything else is constant, what is the probability of hitting OTIF if the customer was P&G?
+\vspace*{-0.12in}
+
+```{r, echo=FALSE}
+print(sprintf('%.1f%%', mean(subset(
+  cleanCopackager, cleanCopackager$customer=="Procter & Gamble")$OTIF)*100))
+```
+
+Answer: 69%
