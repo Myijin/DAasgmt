@@ -3,7 +3,7 @@
 
 This repository includes: <br />
 - [x] final code - **da_assignment.Rmd** contains all code used to solve the assignment <br />
-- [x] A report - **da_assignment.pdf** is my report generated using R Markdown (no code embeded), including <br />
+- [x] A report - **da_assignment.pdf** is my report generated using R Markdown (no code embedded), including <br />
   * Data description
   * Libraries or packages used
   * Steps to clean the data
