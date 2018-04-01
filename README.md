@@ -7,7 +7,7 @@ This repository includes: <br />
   * Data description
   * Libraries or packages used
   * Steps to clean the data
-  * Answers to the questions
+  * Answers to the 4 questions
   * Any assumptions made
   * Visualization
   
