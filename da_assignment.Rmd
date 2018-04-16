@@ -2,8 +2,9 @@
 title: "Data Analyst Take-Home Assignment"
 author: "Yijing Cai"
 output: pdf_document
+geometry: margin=0.65in
 ---
-**Libraries or packages used**: ggplot2 for plot
+**Libraries or packages used**: ggplot2, gridExtra for plot, caret for evaluate models.
 
 **Data Description:**
 
@@ -25,7 +26,7 @@ summary(copackager[,c(11,10)])
 
 1) I checked for missing value and there is none.
 
-2) The values in columns where dates and times are stored are converted to date/time objects for calculation purpose.
+2) The values in columns where dates and times are stored are converted to date/time objects for calculation purpose. The values in OTIF column are converted from integer to factors to be treated as categorical variable.
 
 2) Erroneous values were corrected by removing all the observations with purchase order received date later than materials availability date, or materials availability date later than production started date, or production started date later or equal to production completed date, or production completed date later or equal to shipment shipped date.  After cleaning, there are 1101 observations left.
 
@@ -47,6 +48,8 @@ summary(cleanCopackager[,c(11,10)])
 ```
 
 \newpage
+
+\vspace*{0.22in}
 
 ### Q1: What is the average shift length? 
 \vspace*{-0.12in}
@@ -78,6 +81,8 @@ Answer: 9.866409 $\approx$ 10hrs
 **Assumption**: Based on description file, we can assume that the job is always completed in full (the packaged quantity is equal to that outlined in the PO).
 
 Model for predicting OTIF based on the time from receiving the PO to shipment shipped:
+
+\vspace*{-0.12in}
 ```{r, echo=FALSE}
 cleanCopackager$cycle.time <- as.numeric(
   cleanCopackager$shipment.shipped.date-cleanCopackager$purchase.order.received.date, 
@@ -90,10 +95,40 @@ cleanCopackager$cycle.time <- as.numeric(
 model <- glm(OTIF.factor~ cycle.time, data=cleanCopackager, family=binomial(logit))  
 print(summary(model))
 ```
-Code output for probability of OTIF 3 days after minus probability of 4 days after:
+Residual deviance for the model with predictors is samller than deviance for the null model. Likelihood ratio test p-value less than 0.001 tells us that our model as a whole fits significantly better than an empty model.
+
+\vspace*{-0.1in}
 ```{r, echo=FALSE}
-print(predict.glm(model, newdata=data.frame(cycle.time=3), type="response")-
-        predict.glm(model, newdata=data.frame(cycle.time=4), type="response"))
+with(model, null.deviance - deviance)
+pval <- with(model, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+paste0("p-value:", pval)
+```
+```{r, fig.align='center', fig.width=4.9, fig.height=3.6, echo=FALSE, message=FALSE, warning=FALSE}
+model.df <- data.frame(cycle.time = seq(0, 20, 1))
+model.df$otif <- predict(model, newdata=model.df, type="response")
+# Plot the modeled probability values
+ggplot(model.df, aes(x=cycle.time, y=otif)) + geom_line() + 
+  xlab("Days") +
+  ylab("Probability of OTIF") + 
+  geom_segment(aes(x =-Inf, xend =3,
+                   y =0.9607, yend =0.9607),linetype = "dashed") + 
+  geom_segment(aes(x =-Inf, xend =4,
+                   y =0.9393, yend =0.9393),linetype = "dashed") +
+  geom_segment(aes(x =4, xend =4,
+                   y =-Inf, yend =0.9393),linetype = "dashed") + 
+  geom_segment(aes(x =3, xend =3,
+                   y =-Inf, yend =0.9607),linetype = "dashed") + 
+  annotate(geom="text", x=4.8, y=0.9807, label="(3, 0.961)", color="grey30") + 
+  annotate(geom="text", x=6.3, y=0.9393, label="(4, 0.939)", color="grey30")
+```
+Code output for probability of OTIF 3 days after minus probability of 4 days after:
+
+\vspace*{-0.1in}
+```{r, echo=FALSE}
+# predict.glm(model, newdata=data.frame(cycle.time=3), type="response")
+# predict.glm(model, newdata=data.frame(cycle.time=4), type="response")
+print(predict.glm(model, newdata=data.frame(cycle.time=3), type="response")[[1]]-
+        predict.glm(model, newdata=data.frame(cycle.time=4), type="response")[[1]])
 ```
 
 Answer: 2%
@@ -104,6 +139,7 @@ Answer: 2%
 \vspace*{-0.12in}
 **Assumption**: The effects of other factors like the time from starting production to shipment shipped, or how long is the time from receiving PO to due date, are not considered.
 
+\vspace*{-0.1in}
 ```{r, echo=FALSE}
 cleanCopackager$wait.toproduct <- as.numeric(
   cleanCopackager$production.started.date-cleanCopackager$purchase.order.received.date, 
@@ -111,27 +147,94 @@ cleanCopackager$wait.toproduct <- as.numeric(
 model <- glm(OTIF.factor~ wait.toproduct, data=cleanCopackager, family=binomial(logit))  
 summary(model)
 ```
-I built the above model to predict OTIF based on the time packagers wait after receiving the PO to start production. When the input is 6 days, the model predicts true, which means jobs are more likely to be OTIF.
+Residual deviance for the model with predictors is samller than deviance for the null model. Likelihood ratio test p-value less than 0.001 tells us that our model as a whole fits significantly better than an empty model.
+
+\vspace*{-0.1in}
 ```{r, echo=FALSE}
-print(predict.glm(model, newdata=data.frame(wait.toproduct=6), type="response")>0.5)
+with(model, null.deviance - deviance)
+pval <- with(model, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+paste0("p-value:", pval)
+```
+I built the above model to predict OTIF based on the time packagers wait after receiving the PO to start production. When the input is 6 days, the model predicts true, which means jobs are more likely to be OTIF.
+
+\vspace*{-0.1in}
+```{r, echo=FALSE}
+(predict.glm(model, newdata=data.frame(wait.toproduct=6), type="response")>0.5)[[1]]
+# print(predict.glm(model, newdata=data.frame(wait.toproduct=6), type="response"))
 ```
 When the input is 7 days, the model predicts false, which means jobs are more likely to be not on time.
+
+\vspace*{-0.1in}
 ```{r, echo=FALSE}
-print(predict.glm(model, newdata=data.frame(wait.toproduct=7), type="response")>0.5)
+(predict.glm(model, newdata=data.frame(wait.toproduct=7), type="response")>0.5)[[1]]
+# print(predict.glm(model, newdata=data.frame(wait.toproduct=7), type="response"))
 ```
 
+\vspace*{-0.16in}
+```{r, fig.align='center', fig.width=4.9, fig.height=3.6, echo=FALSE, message=FALSE, warning=FALSE}
+model.df <- data.frame(wait.toproduct = seq(0, 15, 0.5))
+model.df$otif <- predict(model, newdata=model.df, type="response")
+# Plot the modeled probability values
+ggplot(model.df, aes(x=wait.toproduct, y=otif)) + geom_line() + 
+  xlab("Days") +
+  ylab("Probability of OTIF") + 
+  geom_segment(aes(x =-Inf, xend =6,
+                   y =0.6367677, yend =0.6367677),linetype = "dashed") + 
+  geom_segment(aes(x =-Inf, xend =7,
+                   y =0.46691464, yend =0.46691464),linetype = "dashed") +
+  geom_segment(aes(x =7, xend =7,
+                   y =-Inf, yend =0.46691464),linetype = "dashed") + 
+  geom_segment(aes(x =6, xend =6,
+                   y =-Inf, yend =0.6367677),linetype = "dashed") + 
+  annotate(geom="text", x=7.5, y=0.656, label="(6, 0.64)", color="grey30") + 
+  annotate(geom="text", x=8.5, y=0.487, label="(7, 0.47)", color="grey30")
+```
+
+\vspace*{-0.25in}
 Answer: 6 days or less
+
+\newpage
+
+Additional evaluation for the two models in Q2:
+
+When predictor is the time from receiving the PO to start production, here are some statistics for the model.
+```{r, echo=FALSE, message=FALSE}
+library(caret)
+set.seed(88)
+sample <- sample.int(n = nrow(cleanCopackager), size = floor(.8*nrow(cleanCopackager)), replace = F)
+train <- cleanCopackager[sample, ]
+test  <- cleanCopackager[-sample, ]
+model1 <- glm(OTIF.factor~ wait.toproduct, data=train, family=binomial(logit)) 
+fitted.results <- predict(model1, newdata=test, type='response')
+fitted.results <- ifelse(fitted.results > 0.5,1,0)
+accuracy <- 1-mean(fitted.results != test$OTIF.factor)
+results <- confusionMatrix(data=fitted.results, reference=test$OTIF.factor)
+print(results)
+# pr <- prediction(fitted.results, test$OTIF.factor)
+# prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+# plot(prf)
+```
+
+When predictor is the time from receiving the PO to shipment shipped, here are some statistics for the model.
+```{r, echo=FALSE, message=FALSE}
+model2 <- glm(OTIF.factor~ cycle.time, data=cleanCopackager, family=binomial(logit))  
+fitted.results <- predict(model2, newdata=test, type='response')
+fitted.results <- ifelse(fitted.results > 0.5,1,0)
+accuracy <- 1-mean(fitted.results != test$OTIF.factor)
+results <- confusionMatrix(data=fitted.results, reference=test$OTIF.factor)
+print(results)
+# pr <- prediction(fitted.results, test$OTIF.factor)
+# prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+# plot(prf)
+```
 
 \newpage
 
 ###Q3: Is the difference in quantity produced between P&G and Unilever statistically significant?
 \vspace*{-0.12in}
 
-**Assumption**: Samples come from a distribution that's close to normal.
+I have converted the quantity to number of eaches based on customer_unit_of_measure_conversions.csv. From histogram and Shapiro-Wilk test, we can learn that the distribution of data is not normal. 
 
-I have converted the quantity based on customer_unit_of_measure_conversions.csv. Two sample t test is conducted and it shows that the difference is statistically significant since p-value is very small.
-
-T-Test results:
 ```{r, message=FALSE, echo=FALSE}
 cleanCopackager$converse.rate <- 
   ifelse(cleanCopackager$unit.of.measure == "cases" 
@@ -145,13 +248,47 @@ cleanCopackager$converse.rate <-
                               ))))
 cleanCopackager$converse.quantity <- cleanCopackager$converse.rate*cleanCopackager$quantity.produced
 ```
-```{r, echo=FALSE}
+```{r, message=FALSE, echo=FALSE, fig.align='center', fig.width=6.6, fig.height=2.9}
 q.pg <- subset(cleanCopackager, cleanCopackager$customer=="Procter & Gamble")$converse.quantity
 q.unilever <- subset(cleanCopackager, cleanCopackager$customer=="Unilever")$converse.quantity
-print(t.test(q.pg, q.unilever))
+require(gridExtra)
+plot1 <- qplot(q.pg,
+      geom="histogram",
+      xlab = "conversed quantity",
+      binwidth=50,
+      main="Quantity produced by P&G",
+      fill=I("grey"), 
+      col=I("black"))
+plot2 <- qplot(q.unilever,
+      geom="histogram",
+      xlab = "conversed quantity",
+      binwidth=70,
+      main="Quantity produced by Unilever",
+      fill=I("grey"), 
+      col=I("black"))
+grid.arrange(plot1, plot2, ncol=2)
 ```
+
+\vspace*{-0.26in}
+```{r, echo=FALSE}
+shapiro.test(q.pg)
+# print(t.test(q.pg, q.unilever))
+```
+
+\vspace*{-0.12in}
+```{r, echo=FALSE}
+shapiro.test(q.unilever)
+```
+Wilcoxon rank-sum test (also called Mann–Whitney U test or Mann-Whitney-Wilcoxon Test) is conducted and it shows that the difference is statistically significant since p-value is very small. Wilcoxon rank-sum test results:
+
+\vspace*{-0.12in}
+```{r, echo=FALSE}
+wilcox.test(converse.quantity ~ customer, data=cleanCopackager) 
+```
+
 Boxplot for quantities produced by P&G and Unilever:
-```{r, fig.align='center', fig.width=4.1, fig.height=3.7, echo=FALSE, message=FALSE, warning=FALSE}
+
+```{r, fig.align='center', fig.width=4.1, fig.height=3.1, echo=FALSE, message=FALSE, warning=FALSE}
 plot.data <- data.frame(pg=append(q.pg, rep(NA, 7)), Unilever=q.unilever)
 ggplot(stack(plot.data), aes(x = ind, y = values, fill=ind)) + 
   theme(legend.position="none") + xlab("customer") + ylab("quantity") +
@@ -159,6 +296,7 @@ ggplot(stack(plot.data), aes(x = ind, y = values, fill=ind)) +
   geom_boxplot()
 ```
 
+\vspace*{-0.22in}
 Answer: Yes
 
 \newpage
@@ -173,6 +311,14 @@ print(sprintf('%.1f%%', mean(subset(
 Pie chart for Procter & Gamble:
 ```{r, fig.align='center', echo=FALSE}
 df <- as.data.frame(table(subset(cleanCopackager, cleanCopackager$customer=="Procter & Gamble")$OTIF))
+pct <- round(df$Freq/sum(df$Freq)*100)
+lbls <- paste(c("Not OTIF", "OTIF"), pct) # add percents to labels 
+lbls <- paste(lbls,"%",sep="") # ad % to labels 
+pie(df$Freq, labels = lbls, cex=0.75)
+```
+Pie chart for Unilever:
+```{r, fig.align='center', echo=FALSE}
+df <- as.data.frame(table(subset(cleanCopackager, cleanCopackager$customer=="Unilever")$OTIF))
 pct <- round(df$Freq/sum(df$Freq)*100)
 lbls <- paste(c("Not OTIF", "OTIF"), pct) # add percents to labels 
 lbls <- paste(lbls,"%",sep="") # ad % to labels 
